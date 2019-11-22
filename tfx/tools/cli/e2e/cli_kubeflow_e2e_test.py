@@ -24,9 +24,7 @@ import json
 import locale
 import logging
 import os
-import random
 import shutil
-import string
 import subprocess
 import sys
 import tempfile
@@ -54,7 +52,6 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
 
   def setUp(self):
     super(CliKubeflowEndToEndTest, self).setUp()
-    random.seed(datetime.datetime.now())
 
     # List of packages installed.
     self._pip_list = str(subprocess.check_output(['pip', 'freeze', '--local']))
@@ -79,9 +76,8 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
         self._testMethodName)
     tf.io.gfile.makedirs(self._testdata_dir_updated)
 
-    self._pipeline_name = 'chicago_taxi_pipeline_kubeflow_%s_%s' % (''.join([
-        random.choice(string.ascii_lowercase + string.digits) for _ in range(10)
-    ]), datetime.datetime.now().strftime('%s'))
+    self._pipeline_name = 'chicago_taxi_pipeline_kubeflow' + (
+        '_%s' % datetime.datetime.now().strftime('%s%f'))
     absl.logging.info('Pipeline name is %s' % self._pipeline_name)
     self._pipeline_name_v2 = self._pipeline_name + '_v2'
 
@@ -276,16 +272,13 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
     try:
       experiment_id = self._client.get_experiment(
           experiment_name=pipeline_name).id
-      absl.logging.info('Experiment id is %s' % experiment_id)
 
       pipeline_id = self._get_pipeline_id(pipeline_name)
-      absl.logging.info('Pipeline id is %s' % pipeline_id)
 
       run = self._client.run_pipeline(
           experiment_id=experiment_id,
           job_name=pipeline_name,
           pipeline_id=pipeline_id)
-      absl.logging.info('Run is %s' % run)
 
       return run
 
@@ -568,7 +561,7 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
     run_1 = self._run_pipeline_using_kfp_client(self._pipeline_name)
     run_2 = self._run_pipeline_using_kfp_client(self._pipeline_name)
 
-    # List runs.
+    # Delete run.
     result = self.runner.invoke(cli_group, [
         'run', 'list', '--engine', 'kubeflow', '--pipeline_name',
         self._pipeline_name, '--endpoint', self._endpoint
