@@ -403,9 +403,7 @@ class Executor(base_executor.BaseExecutor):
     Returns:
       A PCollection containing KV pairs of bytes.
     """
-    if dataset.file_format != labels.FORMAT_TFRECORD:
-      raise ValueError('Unsupported input file format: {}'.format(
-          dataset.file_format))
+    assert dataset.file_format == labels.FORMAT_TFRECORD, dataset.file_format
 
     # TODO(b/139538871): Implement telemetry, on top of pa.Table once available.
     return (
@@ -438,7 +436,7 @@ class Executor(base_executor.BaseExecutor):
     # TODO(b/139538871): Implement telemetry, on top of pa.Table once available.
     return (
         pcoll
-        | 'DropKeys' >> beam.Values()
+        | 'Values' >> beam.Values()
         | 'Write' >> beam.io.WriteToTFRecord(
             transformed_example_path,
             file_name_suffix='.gz',
@@ -555,7 +553,7 @@ class Executor(base_executor.BaseExecutor):
         tft_beam.Context.get_desired_batch_size())
     return (
         pcoll
-        | 'DropKeys' >> beam.Values()
+        | 'Values' >> beam.Values()
         | 'BatchElements' >> beam.BatchElements(**kwargs)
         | 'ToArrowTables' >> beam.ParDo(Executor._ToArrowTablesFn(schema)))
 
@@ -1346,8 +1344,7 @@ class Executor(base_executor.BaseExecutor):
       dataset.index = index
     return result
 
-  @staticmethod
-  def _ShouldDecodeAsRawExample(data_format: Text) -> bool:
+  def _ShouldDecodeAsRawExample(self, data_format: Text) -> bool:
     """Returns true if data format should be decoded as raw example.
 
     Args:
@@ -1356,8 +1353,8 @@ class Executor(base_executor.BaseExecutor):
     Returns:
       True if data format should be decoded as raw example.
     """
-    return (Executor._IsDataFormatSequenceExample(data_format) or
-            Executor._IsDataFormatProto(data_format))
+    return (self._IsDataFormatSequenceExample(data_format) or
+            self._IsDataFormatProto(data_format))
 
   @staticmethod
   def _IsDataFormatSequenceExample(data_format: Text) -> bool:
