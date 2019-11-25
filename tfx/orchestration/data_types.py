@@ -183,6 +183,6 @@ class RuntimeParameter(json_utils.Jsonable):
 
 
 # TODO(jxzheng): Add checks against ptype in component interfaces.
-def check_parameter_type(parameter: RuntimeParameter, ptype: Type) -> bool:  # pylint: disable=g-bare-generic
+def check_parameter_type(parameter: Any, ptype: Type) -> bool:  # pylint: disable=g-bare-generic
   """Helper function that returns True when parameter.ptype != ptype."""
   return isinstance(parameter, RuntimeParameter) and parameter.ptype != ptype

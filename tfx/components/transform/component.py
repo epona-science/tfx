@@ -22,6 +22,7 @@ from tfx import types
 from tfx.components.base import base_component
 from tfx.components.base import executor_spec
 from tfx.components.transform import executor
+from tfx.orchestration import data_types
 from tfx.types import artifact
 from tfx.types import standard_artifacts
 from tfx.types.standard_component_specs import TransformSpec
@@ -72,24 +73,21 @@ class Transform(base_component.BaseComponent):
     """Construct a Transform component.
 
     Args:
-      examples: A Channel of 'ExamplesPath' type (required). This should
-        contain the two splits 'train' and 'eval'.
+      examples: A Channel of 'ExamplesPath' type (required). This should contain
+        the two splits 'train' and 'eval'.
       schema: A Channel of 'SchemaPath' type. This should contain a single
         schema artifact.
       module_file: The file path to a python module file, from which the
         'preprocessing_fn' function will be loaded. The function must have the
         following signature.
-
-        def preprocessing_fn(inputs: Dict[Text, Any]) -> Dict[Text, Any]:
-          ...
-
-        where the values of input and returned Dict are either tf.Tensor or
-        tf.SparseTensor.  Exactly one of 'module_file' or 'preprocessing_fn'
-        must be supplied.
+        def preprocessing_fn(inputs: Dict[Text, Any]) -> Dict[Text, Any]: ...
+          where the values of input and returned Dict are either tf.Tensor or
+          tf.SparseTensor.  Exactly one of 'module_file' or 'preprocessing_fn'
+          must be supplied.
       preprocessing_fn: The path to python function that implements a
-         'preprocessing_fn'. See 'module_file' for expected signature of the
-         function. Exactly one of 'module_file' or 'preprocessing_fn' must
-         be supplied.
+        'preprocessing_fn'. See 'module_file' for expected signature of the
+        function. Exactly one of 'module_file' or 'preprocessing_fn' must be
+        supplied.
       transform_graph: Optional output 'TransformPath' channel for output of
         'tf.Transform', which includes an exported Tensorflow graph suitable for
         both training and serving;
@@ -109,6 +107,10 @@ class Transform(base_component.BaseComponent):
       raise ValueError(
           "Exactly one of 'module_file' or 'preprocessing_fn' must be supplied."
       )
+    if data_types.check_parameter_type(module_file,
+                                       Text) or data_types.check_parameter_type(
+                                           preprocessing_fn, Text):
+      raise TypeError("Expecting str-typed 'module_file' or 'trainer_fn'.")
 
     transform_graph = transform_graph or types.Channel(
         type=standard_artifacts.TransformGraph,

@@ -23,6 +23,7 @@ from tfx import types
 from tfx.components.base import base_component
 from tfx.components.base import executor_spec
 from tfx.components.schema_gen import executor
+from tfx.orchestration import data_types
 from tfx.types import standard_artifacts
 from tfx.types.standard_component_specs import SchemaGenSpec
 
@@ -68,19 +69,23 @@ class SchemaGen(base_component.BaseComponent):
         currently ignored. _required_
       infer_feature_shape: Boolean value indicating whether or not to infer the
         shape of features. If the feature shape is not inferred, downstream
-        Tensorflow Transform component using the schema will parse input
-        as tf.SparseTensor.
+        Tensorflow Transform component using the schema will parse input as
+        tf.SparseTensor.
       output: Output `Schema` channel for schema result.
       stats: Backwards compatibility alias for the 'statistics' argument.
       instance_name: Optional name assigned to this specific instance of
         SchemaGen.  Required only if multiple SchemaGen components are declared
-        in the same pipeline.
-
-      Either `statistics` or `stats` must be present in the input arguments.
+        in the same pipeline.  Either `statistics` or `stats` must be present in
+        the input arguments.
     """
     statistics = statistics or stats
     output = output or types.Channel(
         type=standard_artifacts.Schema, artifacts=[standard_artifacts.Schema()])
+    if infer_feature_shape and data_types.check_parameter_type(
+        infer_feature_shape, bool):
+      raise TypeError(
+          'Expecting bool-typed infer_feature_shape, but got: {}'.format(
+              infer_feature_shape))
 
     spec = SchemaGenSpec(
         stats=statistics,

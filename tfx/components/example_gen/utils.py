@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Text
 import six
 import tensorflow as tf
 
+from tfx.orchestration import data_types
 from tfx.proto import example_gen_pb2
 from google.protobuf import json_format
 
@@ -107,11 +108,15 @@ def generate_output_split_names(
     if len(input_config['splits']) != 1:
       # If output is specified, then there should only be one input split.
       raise RuntimeError(
-          'ExampleGen instance specified output splits but at the same time input has more than one split.'
+          'ExampleGen instance specified output splits but at the same time '
+          'input has more than one split.'
       )
     for split in output_config['splitConfig']['splits']:
-      if not split['name'] or (isinstance(split['hashBuckets'], int) and
-                               split['hashBuckets'] <= 0):
+      if not split['name'] or data_types.check_parameter_type(
+          split['name'], Text) or (
+              isinstance(split['hashBuckets'], int) and
+              split['hashBuckets'] <= 0) or data_types.check_parameter_type(
+                  split['hashBuckets'], int):
         raise RuntimeError('Str-typed output split name and int-typed '
                            'hashBuckets are required.')
       result.append(split['name'])
@@ -119,7 +124,10 @@ def generate_output_split_names(
     # If output is not specified, it will have the same split as the input.
     if 'splits' in input_config:
       for split in input_config['splits']:
-        if not split['name'] or not split['pattern']:
+        if not split['name'] or data_types.check_parameter_type(
+            split['name'],
+            Text) or not split['pattern'] or data_types.check_parameter_type(
+                split['pattern'], Text):
           raise RuntimeError('Str-typed input split name and pattern '
                              'are required.')
         result.append(split['name'])
