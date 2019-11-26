@@ -79,9 +79,13 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
         self._testMethodName)
     tf.io.gfile.makedirs(self._testdata_dir_updated)
 
-    self._pipeline_name = 'chicago_taxi_pipeline_kubeflow_%s_%s' % (''.join([
-        random.choice(string.ascii_lowercase + string.digits) for _ in range(10)
-    ]), datetime.datetime.now().strftime('%s'))
+    self._pipeline_name = 'chicago_taxi_pipeline_kubeflow_%s_%s' % (
+        datetime.datetime.now().strftime('%s'),
+        ''.join([
+            random.choice(string.ascii_lowercase + string.digits)
+            for _ in range(10)
+        ]),
+    )
     absl.logging.info('Pipeline name is %s' % self._pipeline_name)
     self._pipeline_name_v2 = self._pipeline_name + '_v2'
 
@@ -151,13 +155,10 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
     file_io.write_string_to_file(os.path.join(new_dsl_dir, filename), contents)
 
   def _cleanup_kfp_server(self):
-    pipelines = tf.io.gfile.listdir(self._kubeflow_home)
-    for pipeline_name in pipelines:
-      if tf.io.gfile.isdir(pipeline_name):
-        self._delete_experiment(pipeline_name)
-        self._delete_pipeline(pipeline_name)
-        self._delete_pipeline_output(pipeline_name)
-        self._delete_pipeline_metadata(pipeline_name)
+    self._delete_experiment(self._pipeline_name)
+    self._delete_pipeline(self._pipeline_name)
+    self._delete_pipeline_output(self._pipeline_name)
+    self._delete_pipeline_metadata(self._pipeline_name)
 
   def _delete_pipeline(self, pipeline_name: Text):
     pipeline_id = self._get_pipeline_id(pipeline_name)
@@ -166,12 +167,16 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
       absl.logging.info('Deleted pipeline : {}'.format(pipeline_name))
 
   def _delete_experiment(self, pipeline_name: Text):
-    if self._client.get_experiment(experiment_name=pipeline_name):
+    try:
       experiment_id = self._client.get_experiment(
           experiment_name=pipeline_name).id
-      self._delete_all_runs(experiment_id)
-      self._client._experiment_api.delete_experiment(experiment_id)
-      absl.logging.info('Deleted experiment : {}'.format(pipeline_name))
+    except ValueError:
+      # No experiment to delete
+      return
+
+    self._delete_all_runs(experiment_id)
+    self._client._experiment_api.delete_experiment(experiment_id)
+    absl.logging.info('Deleted experiment : {}'.format(pipeline_name))
 
   def _get_pipeline_id(self, pipeline_name: Text) -> Text:
     # Path to pipeline_args.json .
@@ -238,7 +243,7 @@ class CliKubeflowEndToEndTest(tf.test.TestCase):
         '--user',
         'root',
         '--execute',
-        'drop database if exists {};'.format(db_name),
+        '"drop database if exists {};"'.format(db_name),
     ]
     absl.logging.info('Dropping MLMD DB with name: {}'.format(db_name))
     subprocess.run(command, check=True)
