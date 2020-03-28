@@ -19,7 +19,7 @@ from ml_metadata.proto import metadata_store_pb2
 from tfx.components.base import base_component
 from tfx.components.base import base_driver
 from tfx.orchestration.launcher import base_component_launcher
-from tfx.orchestration.pachdyerm import PachydermDriver
+from tfx.orchestration.pachyderm.pachyderm_driver import PachydermDriver
 from tfx.orchestration import data_types
 
 

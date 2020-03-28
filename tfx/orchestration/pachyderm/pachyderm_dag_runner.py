@@ -48,13 +48,15 @@ def _create_pfs_input(artifact: Artifact) -> Input:
     Returns:
         corresponding Input
     """
-    if not "repo" in artifact.artifact.custom_properties:
+    try:
+        artifact.get_string_custom_property('repo')
+    except:
         raise ValueError(
             "Can't create PFSInput, artifact missing custom property 'repo'"
         )
 
-    repo = artifact.artifact.custom_properties["repo"].string_value
-    branch = artifact.artifact.custom_properties["branch"].string_value
+    repo = artifact.get_string_custom_property("repo")
+    branch = artifact.get_string_custom_property("branch")
 
     pfs_input = PFSInput(repo=repo, branch=branch or "master", glob="/")
 
@@ -120,7 +122,7 @@ class PachydermDagRunner(tfx_runner.TfxRunner):
                 if input_channel in channel_pps_uris:
                     input_repos.append(channel_pps_uris[input_channel])
 
-                elif input_channel.type_name == "ExternalPath":
+                elif input_channel.type_name == "ExternalArtifact":
                     artifacts = input_channel.get()
                     pfs_inputs = [_create_pfs_input(x) for x in artifacts]
                     input_repos += pfs_inputs
@@ -128,7 +130,7 @@ class PachydermDagRunner(tfx_runner.TfxRunner):
                 else:
                     raise ValueError(
                         "Input channel {} is not produced by any prior"\
-                        " stage nor is it an 'ExternalPath'".format(input_name)
+                        " stage nor is it an 'ExternalArtifact".format(input_name)
                     )
 
             stage.pps_inputs = input_repos

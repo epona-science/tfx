@@ -16,6 +16,7 @@
 import datetime
 import os
 from typing import Text
+import tensorflow_model_analysis as tfma
 from tfx.components import CsvExampleGen
 from tfx.components import Evaluator
 from tfx.components import ExampleValidator
@@ -29,13 +30,16 @@ from tfx.orchestration import metadata
 from tfx.orchestration import pipeline
 from tfx.orchestration.pachyderm.pachyderm_dag_runner import PachydermDagRunner
 from tfx.orchestration.pachyderm.pachyderm_dag_runner import PachydermRunnerConfig
+from tfx.orchestration.pachyderm.utils import pfs_external_input
 from tfx.proto import evaluator_pb2
 from tfx.proto import pusher_pb2
 from tfx.proto import trainer_pb2
+from tfx.types import Channel
+from tfx.types.standard_artifacts import Model
+from tfx.types.standard_artifacts import ModelBlessing
 
 import python_pachyderm
 
-from tfx_pachyderm.utils import pfs_input
 
 _pipeline_name = "ChicagoTaxiPachyderm"
 
@@ -43,7 +47,7 @@ _pipeline_spec_dir = os.path.join(os.getcwd(), "specs")
 
 _local_test_root = os.path.join(os.getcwd(), "test")
 
-_tfx_image = "tfxpachyderm/chicago-taxi-example:{}".format(_version.__version__)
+_tfx_image = "tfxpachyderm/chicago-taxi-example"
 
 _input_repo = python_pachyderm.PFSInput(repo="ChicagoTaxiPachyderm", branch="master")
 
@@ -61,16 +65,16 @@ def _create_pipeline(
     serving_model_dir: Text,
 ) -> pipeline.Pipeline:
     """Implements the chicago taxi pipeline with TFX."""
-    input_repo = pfs_input(_input_repo)
+    input_repo = pfs_external_input(_input_repo)
 
     # Brings data into the pipeline or otherwise joins/converts training data.
-    example_gen = CsvExampleGen(input_base=input_repo)
+    example_gen = CsvExampleGen(input=input_repo)
 
     # Computes statistics over data for visualization and example validation.
-    statistics_gen = StatisticsGen(input_data=example_gen.outputs.examples)
+    statistics_gen = StatisticsGen(examples=example_gen.outputs.examples)
 
     # Generates schema based on statistics files.
-    infer_schema = SchemaGen(stats=statistics_gen.outputs.output)
+    infer_schema = SchemaGen(statistics=statistics_gen.outputs.output)
 
     # Performs anomaly detection based on statistics and data schema.
     validate_stats = ExampleValidator(
@@ -79,7 +83,7 @@ def _create_pipeline(
 
     # Performs transformations and feature engineering in training and serving.
     transform = Transform(
-        input_data=example_gen.outputs.examples,
+        examples=example_gen.outputs.examples,
         schema=infer_schema.outputs.output,
         module_file=module_file,
     )
@@ -89,15 +93,16 @@ def _create_pipeline(
         module_file=module_file,
         transformed_examples=transform.outputs.transformed_examples,
         schema=infer_schema.outputs.output,
-        transform_output=transform.outputs.transform_output,
+        transform_graph=transform.outputs.transform_output,
         train_args=trainer_pb2.TrainArgs(num_steps=10000),
         eval_args=trainer_pb2.EvalArgs(num_steps=5000),
     )
 
+
     # Uses TFMA to compute a evaluation statistics over features of a model.
     model_analyzer = Evaluator(
         examples=example_gen.outputs.examples,
-        model_exports=trainer.outputs.output,
+        model=trainer.outputs.output,
         feature_slicing_spec=evaluator_pb2.FeatureSlicingSpec(
             specs=[
                 evaluator_pb2.SingleSlicingSpec(
@@ -115,7 +120,7 @@ def _create_pipeline(
     # Checks whether the model passed the validation steps and pushes the model
     # to a file destination if check passed.
     pusher = Pusher(
-        model_export=trainer.outputs.output,
+        model=trainer.outputs.output,
         model_blessing=model_validator.outputs.blessing,
         push_destination=pusher_pb2.PushDestination(
             filesystem=pusher_pb2.PushDestination.Filesystem(
@@ -154,16 +159,16 @@ def _create_pipeline(
 
 if __name__ == '__main__':
     container_secrets = [
-        python_pachyderm.Secret(
+        python_pachyderm.SecretMount(
             name="tfx-mysql", key="host", env_var="ML_METADATA_MYSQL_HOST"
         ),
-        python_pachyderm.Secret(
+        python_pachyderm.SecretMount(
             name="tfx-mysql", key="user", env_var="ML_METADATA_MYSQL_USER"
         ),
-        python_pachyderm.Secret(
+        python_pachyderm.SecretMount(
             name="tfx-mysql", key="password", env_var="ML_METADATA_MYSQL_PASSWORD"
         ),
-        python_pachyderm.Secret(
+        python_pachyderm.SecretMount(
             name="tfx-mysql", key="database", env_var="ML_METADATA_MYSQL_DATABASE"
         ),
     ]

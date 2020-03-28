@@ -105,6 +105,28 @@ def sqlite_metadata_connection_config(
     metadata_store_pb2.SqliteMetadataSourceConfig.READWRITE_OPENCREATE
   return connection_config
 
+def mysql_uri_metadata_connection_config(
+    uri: Text) -> metadata_store_pb2.ConnectionConfig:
+  """Convenience function to create mysql-based metadata connection config.
+
+  Args:
+    uri: URI-like connection string of form mysql://<user>:<password>@<host>:<port>/<schema>
+
+  Returns:
+    A metadata_store_pb2.ConnectionConfig based on given metadata db uri.
+  """
+  try:
+    parsed_uri = urlparse(uri)
+  except ValueError:
+      raise ValueError('Invalid MySQL connection URI provided {}' % uri)
+
+  return mysql_metadata_connection_config(
+    host=parsed_uri.hostname,
+    port=parsed_uri.port,
+    database=parsed_uri.path[1:],
+    user=parsed_uri.username,
+    password=parsed_uri.password)
+
 
 def mysql_metadata_connection_config(
     host: Text, port: int, database: Text, username: Text,

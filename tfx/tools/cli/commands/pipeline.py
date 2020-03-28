@@ -234,14 +234,20 @@ def delete_pipeline(ctx: Context, engine: Text, pipeline_name: Text,
     default='kubeflow',
     type=str,
     help='Kubernetes namespace to connect to the KFP API.')
+@click.option(
+    '--pachd_address',
+    default=None,
+    type=str,
+    help='Address of pachd cluster to use.')
 def list_pipelines(ctx: Context, engine: Text, endpoint: Text,
-                   iap_client_id: Text, namespace: Text) -> None:
+        iap_client_id: Text, namespace: Text, pachd_address: Text) -> None:
   """Command definition to list pipelines."""
   click.echo('Listing all pipelines')
   ctx.flags_dict[labels.ENGINE_FLAG] = engine
   ctx.flags_dict[labels.ENDPOINT] = endpoint
   ctx.flags_dict[labels.IAP_CLIENT_ID] = iap_client_id
   ctx.flags_dict[labels.NAMESPACE] = namespace
+  ctx.flags_dict[labels.PACHD_ADDRESS] = pachd_address
   handler_factory.create_handler(ctx.flags_dict).list_pipelines()
 
 

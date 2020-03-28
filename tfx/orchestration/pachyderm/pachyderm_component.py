@@ -22,10 +22,8 @@ import python_pachyderm as pachyderm
 from tfx.components.base import base_component
 from tfx.types import Channel
 
-from tfx_pachyderm import _version
 
-
-_BASE_IMAGE = "tfxpachyderm/tfx-pachyderm:%s" % (_version.__version__)
+_BASE_IMAGE = "tfxpachyderm/tfx-pachyderm"
 _COMMAND = ["python", "/src/pipeline_pachyderm.py"]
 
 
