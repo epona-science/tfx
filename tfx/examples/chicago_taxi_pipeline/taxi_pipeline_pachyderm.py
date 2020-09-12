@@ -20,23 +20,24 @@ import tensorflow_model_analysis as tfma
 from tfx.components import CsvExampleGen
 from tfx.components import Evaluator
 from tfx.components import ExampleValidator
-from tfx.components import ModelValidator
 from tfx.components import Pusher
+from tfx.components import ResolverNode
 from tfx.components import SchemaGen
 from tfx.components import StatisticsGen
 from tfx.components import Trainer
 from tfx.components import Transform
+from tfx.dsl.experimental import latest_blessed_model_resolver
 from tfx.orchestration import metadata
 from tfx.orchestration import pipeline
 from tfx.orchestration.pachyderm.pachyderm_dag_runner import PachydermDagRunner
 from tfx.orchestration.pachyderm.pachyderm_dag_runner import PachydermRunnerConfig
 from tfx.orchestration.pachyderm.utils import pfs_external_input
-from tfx.proto import evaluator_pb2
 from tfx.proto import pusher_pb2
 from tfx.proto import trainer_pb2
 from tfx.types import Channel
 from tfx.types.standard_artifacts import Model
 from tfx.types.standard_artifacts import ModelBlessing
+from tfx.version import __version__
 
 import python_pachyderm
 
@@ -47,7 +48,9 @@ _pipeline_spec_dir = os.path.join(os.getcwd(), "specs")
 
 _local_test_root = os.path.join(os.getcwd(), "test")
 
-_tfx_image = "tfxpachyderm/chicago-taxi-example"
+_target_docker_image = "tfxpachyderm/chicago-taxi-example:{}".format(__version__)
+
+_base_docker_image = "tensorflow/tfx:0.22.0.dev20200328"
 
 _input_repo = python_pachyderm.PFSInput(repo="ChicagoTaxiPachyderm", branch="master")
 
@@ -64,122 +67,117 @@ def _create_pipeline(
     module_file: Text,
     serving_model_dir: Text,
 ) -> pipeline.Pipeline:
-    """Implements the chicago taxi pipeline with TFX."""
-    input_repo = pfs_external_input(_input_repo)
+  """Implements the chicago taxi pipeline with TFX."""
+  # Pachyderm repo holding input data to be used
+  input_repo = pfs_external_input(_input_repo)
 
-    # Brings data into the pipeline or otherwise joins/converts training data.
-    example_gen = CsvExampleGen(input=input_repo)
+  # Brings data into the pipeline or otherwise joins/converts training data.
+  example_gen = CsvExampleGen(input=input_repo)
 
-    # Computes statistics over data for visualization and example validation.
-    statistics_gen = StatisticsGen(examples=example_gen.outputs.examples)
+  # Computes statistics over data for visualization and example validation.
+  statistics_gen = StatisticsGen(examples=example_gen.outputs['examples'])
 
-    # Generates schema based on statistics files.
-    infer_schema = SchemaGen(statistics=statistics_gen.outputs.output)
+  # Generates schema based on statistics files.
+  schema_gen = SchemaGen(
+      statistics=statistics_gen.outputs['statistics'],
+      infer_feature_shape=False)
 
-    # Performs anomaly detection based on statistics and data schema.
-    validate_stats = ExampleValidator(
-        stats=statistics_gen.outputs.output, schema=infer_schema.outputs.output
-    )
+  # Performs anomaly detection based on statistics and data schema.
+  example_validator = ExampleValidator(
+      statistics=statistics_gen.outputs['statistics'],
+      schema=schema_gen.outputs['schema'])
 
-    # Performs transformations and feature engineering in training and serving.
-    transform = Transform(
-        examples=example_gen.outputs.examples,
-        schema=infer_schema.outputs.output,
-        module_file=module_file,
-    )
+  # Performs transformations and feature engineering in training and serving.
+  transform = Transform(
+      examples=example_gen.outputs['examples'],
+      schema=schema_gen.outputs['schema'],
+      module_file=module_file)
 
-    # Uses user-provided Python function that implements a model using TF-Learn.
-    trainer = Trainer(
-        module_file=module_file,
-        transformed_examples=transform.outputs.transformed_examples,
-        schema=infer_schema.outputs.output,
-        transform_graph=transform.outputs.transform_output,
-        train_args=trainer_pb2.TrainArgs(num_steps=10000),
-        eval_args=trainer_pb2.EvalArgs(num_steps=5000),
-    )
+  # Uses user-provided Python function that implements a model using TF-Learn.
+  trainer = Trainer(
+      module_file=module_file,
+      transformed_examples=transform.outputs['transformed_examples'],
+      schema=schema_gen.outputs['schema'],
+      transform_graph=transform.outputs['transform_graph'],
+      train_args=trainer_pb2.TrainArgs(num_steps=10000),
+      eval_args=trainer_pb2.EvalArgs(num_steps=5000))
 
+  # Get the latest blessed model for model validation.
+  # model_resolver = ResolverNode(
+  #     instance_name='latest_blessed_model_resolver',
+  #     resolver_class=latest_blessed_model_resolver.LatestBlessedModelResolver,
+  #     model=Channel(type=Model, producer_component_id=trainer.id),
+  #     model_blessing=Channel(type=ModelBlessing, producer_component_id=Evaluator.get_id()))
 
-    # Uses TFMA to compute a evaluation statistics over features of a model.
-    model_analyzer = Evaluator(
-        examples=example_gen.outputs.examples,
-        model=trainer.outputs.output,
-        feature_slicing_spec=evaluator_pb2.FeatureSlicingSpec(
-            specs=[
-                evaluator_pb2.SingleSlicingSpec(
-                    column_for_slicing=["trip_start_hour"]
-                )
-            ]
-        ),
-    )
+  # Uses TFMA to compute a evaluation statistics over features of a model and
+  # perform quality validation of a candidate model (compared to a baseline).
+  eval_config = tfma.EvalConfig(
+      model_specs=[tfma.ModelSpec(signature_name='eval')],
+      slicing_specs=[
+          tfma.SlicingSpec(),
+          tfma.SlicingSpec(feature_keys=['trip_start_hour'])
+      ],
+      metrics_specs=[
+          tfma.MetricsSpec(
+              thresholds={
+                  'binary_accuracy':
+                      tfma.config.MetricThreshold(
+                          value_threshold=tfma.GenericValueThreshold(
+                              lower_bound={'value': 0.6}),
+                          change_threshold=tfma.GenericChangeThreshold(
+                              direction=tfma.MetricDirection.HIGHER_IS_BETTER,
+                              absolute={'value': -1e-10}))
+              })
+      ])
 
-    # Performs quality validation of a candidate model (compared to a baseline).
-    model_validator = ModelValidator(
-        examples=example_gen.outputs.examples, model=trainer.outputs.output
-    )
+  evaluator = Evaluator(
+      examples=example_gen.outputs['examples'],
+      model=trainer.outputs['model'],
+      baseline_model=trainer.outputs['model'],
+      # Change threshold will be ignored if there is no baseline (first run).
+      eval_config=eval_config)
 
-    # Checks whether the model passed the validation steps and pushes the model
-    # to a file destination if check passed.
-    pusher = Pusher(
-        model=trainer.outputs.output,
-        model_blessing=model_validator.outputs.blessing,
-        push_destination=pusher_pb2.PushDestination(
-            filesystem=pusher_pb2.PushDestination.Filesystem(
-                base_directory=serving_model_dir
-            )
-        ),
-    )
+  # Checks whether the model passed the validation steps and pushes the model
+  # to a file destination if check passed.
+  pusher = Pusher(
+      model=trainer.outputs['model'],
+      model_blessing=evaluator.outputs['blessing'],
+      push_destination=pusher_pb2.PushDestination(
+          filesystem=pusher_pb2.PushDestination.Filesystem(
+              base_directory=serving_model_dir)))
 
-    return pipeline.Pipeline(
-        pipeline_name=pipeline_name,
-        pipeline_root=pipeline_root,
-        components=[
-            example_gen,
-            statistics_gen,
-            infer_schema,
-            validate_stats,
-            transform,
-            trainer,
-            model_analyzer,
-            model_validator,
-            pusher,
-        ],
-        enable_cache=False,
-        metadata_connection_config=metadata.mysql_metadata_connection_config(
-            host=os.getenv("ML_METADATA_MYSQL_HOST"),
-            port=3306,
-            username=os.getenv("ML_METADATA_MYSQL_USER"),
-            password=os.getenv("ML_METADATA_MYSQL_PASSWORD"),
-            database=os.getenv("ML_METADATA_MYSQL_DATABASE")
-        ),
-        additional_pipeline_args={
-            "tfx_image": _tfx_image,
-            "local_test_root": _local_test_root,
+  return pipeline.Pipeline(
+      pipeline_name=pipeline_name,
+      pipeline_root=pipeline_root,
+      components=[
+          example_gen, statistics_gen, schema_gen, example_validator, transform,
+          trainer, evaluator, pusher
+      ],
+      enable_cache=False,
+      metadata_connection_config=metadata.mysql_uri_metadata_connection_config(
+        uri=os.getenv("ML_METADATA_MYSQL_URI")
+      ),
+      additional_pipeline_args={
+        "target_docker_image": _target_docker_image,
+        "base_docker_image": _base_docker_image,
+        "local_test_root": _local_test_root,
         }
-    )
+      )
 
 if __name__ == '__main__':
-    container_secrets = [
-        python_pachyderm.SecretMount(
-            name="tfx-mysql", key="host", env_var="ML_METADATA_MYSQL_HOST"
-        ),
-        python_pachyderm.SecretMount(
-            name="tfx-mysql", key="user", env_var="ML_METADATA_MYSQL_USER"
-        ),
-        python_pachyderm.SecretMount(
-            name="tfx-mysql", key="password", env_var="ML_METADATA_MYSQL_PASSWORD"
-        ),
-        python_pachyderm.SecretMount(
-            name="tfx-mysql", key="database", env_var="ML_METADATA_MYSQL_DATABASE"
-        ),
-    ]
+  container_secrets = [
+    python_pachyderm.SecretMount(
+      name="tfx-mysql", key="uri", env_var="ML_METADATA_MYSQL_URI"
+    ),
+  ]
 
-    config = PachydermRunnerConfig(container_secrets=container_secrets)
+  config = PachydermRunnerConfig(container_secrets=container_secrets)
 
-    PachydermDagRunner(output_dir=_pipeline_spec_dir, config=config).run(
-        _create_pipeline(
-            pipeline_name=_pipeline_name,
-            pipeline_root=_local_test_root,
-            module_file=_module_file,
-            serving_model_dir=_serving_model_dir,
-        )
+  PachydermDagRunner(output_dir=_pipeline_spec_dir, config=config).run(
+      _create_pipeline(
+        pipeline_name=_pipeline_name,
+        pipeline_root=_local_test_root,
+        module_file=_module_file,
+        serving_model_dir=_serving_model_dir,
+      )
     )

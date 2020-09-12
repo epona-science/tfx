@@ -16,7 +16,9 @@
 import os
 from typing import Any, List, Optional, Text
 
-from python_pachyderm import Input, PFSInput, Secret
+from python_pachyderm import Input
+from python_pachyderm import PFSInput
+from python_pachyderm import Secret
 
 from tfx.orchestration import pipeline
 from tfx.orchestration import tfx_runner
@@ -92,11 +94,11 @@ class PachydermDagRunner(tfx_runner.TfxRunner):
         Args:
           pipeline: The logical TFX pipeline to base the construction on.
         """
-        tfx_image = pipeline.additional_pipeline_args.get("tfx_image")
+        docker_image = pipeline.additional_pipeline_args.get("target_docker_image")
 
         pipeline_properties = pachyderm_component.PipelineProperties(
             name=pipeline.pipeline_info.pipeline_name,
-            docker_image=tfx_image,
+            docker_image=docker_image,
             spec_output_dir=self._output_dir,
             beam_pipeline_args=pipeline.beam_pipeline_args,
             container_secrets=self._config.container_secrets,
@@ -129,8 +131,9 @@ class PachydermDagRunner(tfx_runner.TfxRunner):
 
                 else:
                     raise ValueError(
-                        "Input channel {} is not produced by any prior"\
-                        " stage nor is it an 'ExternalArtifact".format(input_name)
+                        "Input channel {} provided to component {} is not produced"\
+                        " by any prior stage nor is it an 'ExternalArtifact'".format(
+                          input_name, stage.name)
                     )
 
             stage.pps_inputs = input_repos

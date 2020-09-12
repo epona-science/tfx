@@ -59,13 +59,16 @@ class PachydermHandler(base_handler.BaseHandler):
     Args:
       update: set as true to update pipeline.
     """
+    # Compile pipeline so we can use pipeline args
+    pipeline_args = self.compile_pipeline()
+
     # Build pipeline container image.
     try:
-      target_image = self.flags_dict.get(labels.TARGET_IMAGE)
+      target_image = pipeline_args['additional_pipeline_args']['target_docker_image']
       skaffold_cmd = self.flags_dict.get(labels.SKAFFOLD_CMD)
       if target_image is not None or os.path.exists(
           container_builder_labels.BUILD_SPEC_FILENAME):
-        base_image = self.flags_dict.get(labels.BASE_IMAGE)
+        base_image = pipeline_args['additional_pipeline_args']['base_docker_image']
         target_image = self._build_pipeline_image(target_image, base_image,
                                                   skaffold_cmd)
     except (ValueError, subprocess.CalledProcessError, RuntimeError):
@@ -74,9 +77,6 @@ class PachydermHandler(base_handler.BaseHandler):
     else:
       click.echo('New container image is built. Target image is available in '
                  'the build spec file.')
-
-    # Compile pipeline to check if pipeline_args are extracted successfully.
-    pipeline_args = self.compile_pipeline()
 
     pipeline_name = pipeline_args[labels.PIPELINE_NAME]
 

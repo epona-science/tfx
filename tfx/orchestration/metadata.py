@@ -27,6 +27,7 @@ import random
 import time
 import types
 from typing import Any, Dict, List, Optional, Set, Text, Tuple, Type, Union
+from urllib.parse import urlparse
 
 import absl
 import six
@@ -124,7 +125,7 @@ def mysql_uri_metadata_connection_config(
     host=parsed_uri.hostname,
     port=parsed_uri.port,
     database=parsed_uri.path[1:],
-    user=parsed_uri.username,
+    username=parsed_uri.username,
     password=parsed_uri.password)
 
 
