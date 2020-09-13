@@ -15,7 +15,7 @@
 
 import datetime
 import os
-from typing import Text
+from typing import List, Text
 import tensorflow_model_analysis as tfma
 from tfx.components import CsvExampleGen
 from tfx.components import Evaluator
@@ -50,7 +50,7 @@ _local_test_root = os.path.join(os.getcwd(), "test")
 
 _target_docker_image = "tfxpachyderm/chicago-taxi-example:{}".format(__version__)
 
-_base_docker_image = "tensorflow/tfx:0.22.0.dev20200328"
+_base_docker_image = "tensorflow/tfx:0.23.0"
 
 _input_repo = python_pachyderm.PFSInput(repo="ChicagoTaxiPachyderm", branch="master")
 
@@ -60,12 +60,20 @@ _module_file = os.path.join(os.sep, "src", "taxi_utils.py")
 
 _serving_model_dir = os.path.join(_taxi_root, "serving_model", _pipeline_name)
 
+# Pipeline arguments for Beam powered Components.
+_beam_pipeline_args = [
+    '--direct_running_mode=multi_processing',
+    # 0 means auto-detect based on on the number of CPUs available
+    # during execution time.
+    '--direct_num_workers=0',
+]
 
 def _create_pipeline(
     pipeline_name: Text,
     pipeline_root: Text,
     module_file: Text,
     serving_model_dir: Text,
+    beam_pipeline_args: List[Text],
 ) -> pipeline.Pipeline:
   """Implements the chicago taxi pipeline with TFX."""
   # Pachyderm repo holding input data to be used
@@ -157,11 +165,12 @@ def _create_pipeline(
       metadata_connection_config=metadata.mysql_uri_metadata_connection_config(
         uri=os.getenv("ML_METADATA_MYSQL_URI")
       ),
+      beam_pipeline_args=beam_pipeline_args,
       additional_pipeline_args={
         "target_docker_image": _target_docker_image,
         "base_docker_image": _base_docker_image,
         "local_test_root": _local_test_root,
-        }
+        },
       )
 
 if __name__ == '__main__':
@@ -179,5 +188,6 @@ if __name__ == '__main__':
         pipeline_root=_local_test_root,
         module_file=_module_file,
         serving_model_dir=_serving_model_dir,
+        beam_pipeline_args=_beam_pipeline_args,
       )
     )

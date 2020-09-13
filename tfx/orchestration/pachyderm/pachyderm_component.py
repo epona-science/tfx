@@ -20,6 +20,7 @@ from typing import Iterable, List, Optional, Text, Tuple
 from google.protobuf.json_format import MessageToJson
 import python_pachyderm as pachyderm
 from tfx.components.base import base_component
+from tfx.orchestration.pachyderm.utils import pfs_external_input
 from tfx.types import Channel
 
 
@@ -149,7 +150,12 @@ class PachydermComponent:
         Returns:
             Iterable of name/channel pairs
         """
-        return self.component.inputs.get_all().items()
+        if bool(self.component.inputs.get_all()):
+          return self.component.inputs.get_all().items()
+
+        repo_name = self.component.exec_properties['input_base'].split('/')[-1]
+        _input_repo = pachyderm.PFSInput(repo=repo_name, branch="master")
+        return [('input_base', pfs_external_input(_input_repo))]
 
     def output_channels(self) -> Iterable[Tuple[Text, Channel]]:
         """Fetches iterable of tuple pairs containing output name

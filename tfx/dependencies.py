@@ -122,7 +122,7 @@ def make_extra_packages_test():
       'kfp>=1.1.0,<2',
       'kfp-pipeline-spec>=0.1.2,<0.2',
       'pytest>=5,<6',
-      'python_pachyderm>=4.0.0,<5.0',
+      'python-pachyderm>=6.0.0,<7.0',
   ]
 
 
